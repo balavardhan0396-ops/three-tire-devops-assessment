@@ -2,110 +2,124 @@ pipeline {
 
     agent any
 
-    environment {
-        COMPOSE_DOCKER_CLI_BUILD = "1"
-        DOCKER_BUILDKIT = "1"
-    }
-
     options {
         timestamps()
+        disableConcurrentBuilds()
+    }
+
+    environment {
+        COMPOSE_PROJECT_NAME = "three-tier-app"
     }
 
     stages {
 
-        stage('Checkout Source') {
+        stage('Clean Workspace') {
             steps {
+                cleanWs()
+            }
+        }
+
+        stage('Checkout Source Code') {
+            steps {
+                echo "Checking out source code from GitHub..."
                 checkout scm
             }
         }
 
-        stage('Verify Repository') {
+        stage('Verify Repository Structure') {
             steps {
-                sh '''
-                pwd
-                ls -la
+                bat '''
+                echo ==========================================
+                echo Verifying Repository Structure
+                echo ==========================================
+
+                cd
+                dir
                 '''
             }
         }
 
-        stage('Frontend Dependencies') {
+        stage('Trivy Filesystem Scan') {
             steps {
-                dir('frontend') {
-                    sh '''
-                    npm install
-                    '''
-                }
-            }
-        }
+                bat '''
+                echo ==========================================
+                echo Running Trivy Filesystem Scan
+                echo ==========================================
 
-        stage('Backend Dependencies') {
-            steps {
-                dir('backend') {
-                    sh '''
-                    npm install
-                    '''
-                }
-            }
-        }
+                trivy fs --severity HIGH,CRITICAL --format table . > trivy-fs-report.txt
 
-        stage('Build React Application') {
-            steps {
-                dir('frontend') {
-                    sh '''
-                    npm run build
-                    '''
-                }
-            }
-        }
-
-        stage('Security Scan') {
-            steps {
-                dir('frontend') {
-                    sh '''
-                    npm audit || true
-                    '''
-                }
-
-                dir('backend') {
-                    sh '''
-                    npm audit || true
-                    '''
-                }
+                type trivy-fs-report.txt
+                '''
             }
         }
 
         stage('Build Docker Images') {
             steps {
-                sh '''
+                bat '''
+                echo ==========================================
+                echo Building Docker Images
+                echo ==========================================
+
                 docker compose build
                 '''
             }
         }
 
-        stage('Deploy Containers') {
+        stage('Trivy Docker Image Scan') {
             steps {
-                sh '''
+                bat '''
+                echo ==========================================
+                echo Scanning Docker Images
+                echo ==========================================
+
+                trivy image frontend:latest > frontend-image-report.txt
+                trivy image backend:latest > backend-image-report.txt
+
+                type frontend-image-report.txt
+                type backend-image-report.txt
+                '''
+            }
+        }
+
+        stage('Deploy Docker Containers') {
+            steps {
+                bat '''
+                echo ==========================================
+                echo Deploying Containers
+                echo ==========================================
+
                 docker compose up -d
                 '''
             }
         }
 
-        stage('Verify Containers') {
+        stage('Verify Running Containers') {
             steps {
-                sh '''
+                bat '''
+                echo ==========================================
+                echo Running Containers
+                echo ==========================================
+
                 docker ps
+
+                echo.
+
+                docker compose ps
                 '''
             }
         }
 
-        stage('Health Check') {
+        stage('Application Health Check') {
             steps {
-                sh '''
-                sleep 20
+                bat '''
+                echo ==========================================
+                echo Performing Health Check
+                echo ==========================================
 
-                curl http://localhost:3001 || true
+                timeout /t 20
 
-                docker compose ps
+                curl http://localhost:3001
+
                 '''
             }
         }
@@ -114,23 +128,31 @@ pipeline {
 
     post {
 
-        always {
-
-            echo "Pipeline Finished"
-
-        }
-
         success {
 
-            echo "Application deployed successfully"
+            echo "==========================================="
+            echo "Application deployed successfully."
+            echo "==========================================="
 
         }
 
         failure {
 
-            echo "Deployment Failed"
+            echo "==========================================="
+            echo "Pipeline failed."
+            echo "Check Console Output."
+            echo "==========================================="
 
         }
+
+        always {
+
+            archiveArtifacts artifacts: '*.txt', fingerprint: true
+
+            echo "Pipeline execution completed."
+
+        }
+
     }
 
 }

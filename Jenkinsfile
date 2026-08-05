@@ -52,7 +52,24 @@ pipeline {
                 '''
             }
         }
+        stage('Debug Files') {
+    steps {
+        bat '''
+        echo ==========================
+        echo Frontend Files
+        echo ==========================
+        dir frontend
 
+        echo.
+        echo Frontend package.json
+        type frontend\\package.json
+
+        echo.
+        echo Frontend Dockerfile
+        type frontend\\Dockerfile
+        '''
+    }
+}
         stage('Build Docker Images') {
             steps {
                 bat '''
